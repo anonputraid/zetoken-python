@@ -1,4 +1,5 @@
 import os
+import time
 import hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
@@ -27,11 +28,15 @@ class Zetoken:
             dklen=16
         )
 
-    def encode(self, text, key_id=None, secret_key=None):
+    def encode(self, text, key_id=None, secret_key=None, ttl=None):
         kid, sec, iterations = self._resolve_keys(key_id, secret_key)
 
         if not kid or not sec:
             return False
+
+        if ttl is not None and isinstance(ttl, int) and ttl > 0:
+            exp_time = int(time.time()) + ttl
+            text = f"{text}__ZTX__{exp_time}"
 
         aes_key = self._derive_cryptographic_key(kid, sec, iterations)
         iv = os.urandom(12)  
@@ -52,7 +57,7 @@ class Zetoken:
         
         return numeric_result
 
-    def decode(self, cipher_text, key_id=None, secret_key=None):
+    def decode(self, cipher_text, key_id=None, secret_key=None, leeway=60):
         kid, sec, iterations = self._resolve_keys(key_id, secret_key)
 
         if not kid or not sec:
@@ -80,11 +85,24 @@ class Zetoken:
 
         try:
             decrypted = aesgcm.decrypt(iv, cryptography_ciphertext, None)
-            return decrypted.decode('utf-8')
+            decrypted_text = decrypted.decode('utf-8')
+
+            if "__ZTX__" in decrypted_text:
+                parts = decrypted_text.rsplit('__ZTX__', 1) 
+                if len(parts) == 2:
+                    try:
+                        exp_time = int(parts[1])
+                        if (int(time.time()) - leeway) > exp_time:
+                            return False 
+                        return parts[0] 
+                    except ValueError:
+                        pass
+
+            return decrypted_text
         except (InvalidTag, Exception):
             return False
 
-    def sign(self, text, key_id, secret_key=None):
+    def sign(self, text, key_id, secret_key=None, ttl=None):
         master_access_key, master_secret_key, _ = self._resolve_keys(None, secret_key)
 
         if not master_access_key or not master_secret_key or not key_id:
@@ -92,9 +110,9 @@ class Zetoken:
 
         layered_key_id = f"{master_access_key}::{key_id}"
 
-        return self.encode(text, layered_key_id, master_secret_key)
+        return self.encode(text, layered_key_id, master_secret_key, ttl=ttl)
 
-    def verify_sign(self, token, key_id, secret_key=None):
+    def verify_sign(self, token, key_id, secret_key=None, leeway=60):
         master_access_key, master_secret_key, _ = self._resolve_keys(None, secret_key)
 
         if not master_access_key or not master_secret_key or not key_id:
@@ -102,6 +120,6 @@ class Zetoken:
 
         layered_key_id = f"{master_access_key}::{key_id}"
 
-        return self.decode(token, layered_key_id, master_secret_key)
+        return self.decode(token, layered_key_id, master_secret_key, leeway=leeway)
 
     verifySign = verify_sign

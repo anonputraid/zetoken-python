@@ -32,6 +32,7 @@ However, to comply with the global cybersecurity standard "Don't roll your own c
 *   **Encryption**: Converts text data into unique numeric tokens
 *   **Decryption**: Accurately restores numeric tokens back into the original text data
 *   **Security**: Utilizes `keyId` (identifier / offset) and `secretKey` (primary key). Tokens can only be read by parties possessing the same keys.
+*   **Time-Bound Tokens (TTL)**: Native support for auto-expiring tokens with built-in NTP Clock Skew tolerance (Leeway).
 
 ---
 
@@ -54,6 +55,7 @@ Zetoken **does not have fallback keys** for security reasons. You **MUST** inclu
 ZETOKEN_ACCESS_KEY_ID="your_unique_identity"
 ZETOKEN_SECRET_KEY="your_secret_key"
 ZETOKEN_ITERATIONS=1000
+
 
 ```
 
@@ -84,6 +86,8 @@ Final Results:
 - Total Failures       : 0
 - Python Memory Delta  : 4.77 KB
 ==================================================
+
+
 ```
 
 ---
@@ -93,16 +97,17 @@ Final Results:
 Ensure your server or system meets the following modern standards:
 
 * **Python >= 3.7**
-* Third-party library: `cryptography`
+* Third-party libraries: `cryptography`, `python-dotenv` (installed automatically)
 
 ---
 
 ## 📦 Installation
 
-Use PIP (Python Package Installer):
+Use PIP (Python Package Installer). Dependencies will be downloaded automatically:
 
 ```bash
 pip install zetoken
+
 
 ```
 
@@ -115,7 +120,12 @@ pip install zetoken
 This method is the simplest as it automatically retrieves keys from the Environment system / `.env`.
 
 ```python
+import os
+from dotenv import load_dotenv
 from zetoken import Zetoken
+
+# Load environment variables from .env file
+load_dotenv()
 
 zetoken = Zetoken()
 
@@ -124,6 +134,7 @@ token = zetoken.encode("Secret Message")
 
 # Decode and perfectly restore to original text
 original = zetoken.decode(token)
+
 
 ```
 
@@ -134,7 +145,12 @@ original = zetoken.decode(token)
 Use this feature if you want to bind a token exclusively to an entity (e.g., User ID, Transaction Number). Even if the keys are compromised, `User A`'s token cannot be used by `User B`.
 
 ```python
+import os
+from dotenv import load_dotenv
 from zetoken import Zetoken
+
+# Load environment variables from .env file
+load_dotenv()
 
 zetoken = Zetoken()
 
@@ -149,6 +165,42 @@ result = zetoken.verify_sign(token, user_id)
 
 if result is False:
     print("Fake token, manipulated, or incorrect KeyID!")
+
+
+```
+
+---
+
+### 3. Time-Bound Tokens (TTL & Leeway)
+
+You can generate tokens that automatically expire after a certain amount of time (Time-To-Live). Zetoken internally validates the expiration and provides a default `leeway` of 60 seconds to accommodate minor server clock desynchronization (NTP Clock Skew).
+
+```python
+import os
+from dotenv import load_dotenv
+from zetoken import Zetoken
+
+load_dotenv()
+zetoken = Zetoken()
+
+# 1. ENCODE WITH EXPIRATION
+# Add the `ttl` parameter (in seconds). E.g., 300 seconds = 5 minutes.
+token = zetoken.encode("Self-destructing message", ttl=300)
+
+# You can also use TTL with the Sign feature:
+# token = zetoken.sign("Exam Passed", "USER-9921", ttl=300)
+
+
+# 2. DECODE WITH AUTOMATIC TIME VALIDATION
+# When decoding, Zetoken automatically checks the time. 
+# It includes a default leeway of 60 seconds.
+original = zetoken.decode(token)
+
+if original is False:
+    print("Token is either invalid, manipulated, or has expired!")
+    
+# Optional: You can customize the leeway time (in seconds)
+# original = zetoken.decode(token, leeway=30)
 
 ```
 
